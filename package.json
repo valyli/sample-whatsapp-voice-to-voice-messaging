@@ -1,0 +1,45 @@
+{
+  "name": "whatsapp-voice",
+  "version": "1.0.0",
+  "overrides": {
+    "@aws-sdk/client-transcribe-streaming": "3.825.0"
+  },
+  "license": "MIT",
+  "bin": {
+    "whatsapp-voice": "bin/whatsapp-voice.js"
+  },
+  "scripts": {
+    "clean": "rm -rf build cdk.out dist node_modules",
+    "watch": "tsc -w",
+    "prepare": "npm run build",
+    "test": "echo OK",
+    "lint": "eslint --cache lib && prettier --list-different --cache .",
+    "format": "eslint --fix --cache lib && prettier --write --cache .",
+    "prebuild": "npm run format",
+    "build": "tsc",
+    "cdk": "cdk",
+    "deploy": "cdk deploy",
+    "destroy": "cdk destroy"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.787.0",
+    "@aws-sdk/client-sns": "^3.787.0",
+    "@aws-sdk/client-socialmessaging": "^3.787.0",
+    "@aws-sdk/client-sagemaker-runtime": "^3.787.0",
+    "@aws-sdk/client-transcribe-streaming": "^3.787.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.787.0",
+    "@aws-sdk/client-dynamodb": "^3.787.0",
+    "aws-cdk-lib": "^2.162.1",
+    "constructs": "^10.4.1",
+    "source-map-support": "^0.5.21"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.1",
+    "@types/node": "^22.7.5",
+    "aws-cdk": "^2.178.2",
+    "jest": "^29.5.0",
+    "ts-jest": "^29.1.0",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.6.3"
+  }
+}

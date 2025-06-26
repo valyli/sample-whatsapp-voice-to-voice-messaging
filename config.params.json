@@ -1,0 +1,16 @@
+{
+    "CdkProjectName": "WhatsappVoiceStack",
+    "Engine": "whisper",
+    "WhisperEndpointName": "endpoint-quick-start-ph3vh",
+    "WhatsAppPhoneNumberId": "YOUR_WHATSAPP_PHONE_NUMBER_ID",
+    "WhatsAppSNSTopicArn": "",
+    "CreateNewSnsTopic": true,
+    "S3BucketConfig": {
+        "MediaBucketName": "whatsapp-voice-media",
+        "LogsBucketName": "whatsapp-voice-logs"
+    },
+    "Tags": {
+        "Project": "AWSSummitAssistant",
+        "Environment": "Development"
+    }
+}

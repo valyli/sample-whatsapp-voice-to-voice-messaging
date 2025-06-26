@@ -1,0 +1,23 @@
+*.js
+!jest.config.js
+*.d.ts
+node_modules
+.DS_Store
+
+# CDK asset staging directory
+.cdk.staging
+cdk.out
+
+# Lambda build artifacts
+dist/
+layers/ffmpeg/ffmpeg-*
+layers/ffmpeg/ffmpeg.tar.xz
+
+# Parcel default cache directory
+.parcel-cache
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
