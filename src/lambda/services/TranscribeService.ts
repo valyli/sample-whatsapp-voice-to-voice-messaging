@@ -18,15 +18,20 @@ export class TranscribeService {
    */
   static async transcribeAudioFromS3(mediaKey: string) {
     const bucketName = process.env.WHATSAPP_S3_BUCKET_NAME || '';
-    const oggPath = path.join(tmpdir(), `${mediaKey}.ogg`);
-    const pcmPath = path.join(tmpdir(), `${mediaKey}.pcm`);
+    // Extract the filename without duplicating the extension
+    const filename = path.basename(mediaKey, '.ogg');
+    const oggPath = path.join(tmpdir(), `${filename}.ogg`);
+    const pcmPath = path.join(tmpdir(), `${filename}.pcm`);
 
     try {
+      // Log bucket name and key for debugging
+      console.log(`Attempting to download from S3: Bucket=${bucketName}, Key=${mediaKey}`);
+      
       // Download OGG file
       const { Body } = await s3Client.send(
         new GetObjectCommand({
           Bucket: bucketName,
-          Key: `whatsapp-media/sum_${mediaKey}.ogg`,
+          Key: mediaKey, // Use the mediaKey directly as it already contains the full path
         }),
       );
 

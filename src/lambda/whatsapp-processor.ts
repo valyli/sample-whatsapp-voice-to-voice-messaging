@@ -151,6 +151,35 @@ export const handler: SQSHandler = async (event: SQSEvent) => {
         continue;
       }
       
+      // Log the S3 key for debugging
+      console.log(`S3 key for audio file: ${mediaInfo.s3Key}`);
+      
+      // Add a delay to ensure the S3 object is fully available
+      console.log('Waiting for S3 object to be fully available...');
+      await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+      
+      // Check if the S3 object exists in either format
+      console.log('Checking if S3 object exists...');
+      let objectExists = await S3Service.objectExists(WHATSAPP_S3_BUCKET_NAME, mediaInfo.s3Key || '');
+      
+      // If the standard format doesn't exist, try the alternate format
+      if (!objectExists && mediaInfo.alternateS3Key) {
+        console.log(`Standard S3 key not found, trying alternate key: ${mediaInfo.alternateS3Key}`);
+        objectExists = await S3Service.objectExists(WHATSAPP_S3_BUCKET_NAME, mediaInfo.alternateS3Key);
+        
+        // If the alternate format exists, update the s3Key in mediaInfo
+        if (objectExists) {
+          console.log(`Found object with alternate key: ${mediaInfo.alternateS3Key}`);
+          mediaInfo.s3Key = mediaInfo.alternateS3Key;
+        }
+      }
+      
+      if (!objectExists) {
+        console.log('S3 object does not exist in any format, listing objects in bucket...');
+        await S3Service.listObjects(WHATSAPP_S3_BUCKET_NAME, 'whatsapp-media/');
+        throw new Error('S3 object does not exist');
+      }
+      
       try {
         // Transcribe audio based on configured engine
         let transcription;
@@ -209,8 +238,8 @@ export const handler: SQSHandler = async (event: SQSEvent) => {
           }
         }
         
-        // Clean up S3 object
-        await S3Service.deleteS3Object(WHATSAPP_S3_BUCKET_NAME, `whatsapp-media/sum_${msg.audio.id}.ogg`);
+        // Clean up S3 object - use the same S3 key that was returned from getWhatsAppMedia
+        await S3Service.deleteS3Object(WHATSAPP_S3_BUCKET_NAME, mediaInfo.s3Key || '');
         
         // Publish to SNS topic if configured
         if (PROCESSED_MESSAGES_TOPIC_ARN) {
@@ -235,8 +264,17 @@ export const handler: SQSHandler = async (event: SQSEvent) => {
       } catch (err) {
         console.error('Error during transcription:', err);
         // Clean up S3 object if it exists
-        await S3Service.deleteS3Object(WHATSAPP_S3_BUCKET_NAME, `whatsapp-media/sum_${msg.audio.id}.ogg`);
-        await sendResponse(message, 'Sorry, I couldn\'t process that voice message.');
+        try {
+          await S3Service.deleteS3Object(WHATSAPP_S3_BUCKET_NAME, mediaInfo.s3Key || '');
+        } catch (deleteErr) {
+          console.error('Error deleting S3 object:', deleteErr);
+          // Continue execution even if deletion fails
+        }
+        
+        // Only send error message if there was a real transcription error
+        if (err instanceof Error && err.message !== 'media_deleted') {
+          await sendResponse(message, 'Sorry, I couldn\'t process that voice message.');
+        }
       }
     } catch (err) {
       console.error('Error processing record:', err);

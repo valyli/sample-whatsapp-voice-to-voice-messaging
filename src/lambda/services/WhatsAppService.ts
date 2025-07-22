@@ -133,14 +133,24 @@ export class WhatsAppService {
       metadataOnly: true,
     };
 
-    const s3Key = `whatsapp-media/sum_`;
+    // Construct the possible S3 key formats
+    const s3KeyBase = `whatsapp-media/sum_`;
+    const bucketName = process.env.WHATSAPP_S3_BUCKET_NAME || '';
+    
+    // The WhatsApp API sometimes creates files with duplicated mediaId, sometimes without
+    const standardS3Key = `${s3KeyBase}${mediaId}.ogg`;
+    const duplicatedS3Key = `${s3KeyBase}${mediaId}.ogg${mediaId}.ogg`;
+    
+    // Log the S3 key and bucket name for debugging
+    console.log(`Downloading media with ID ${mediaId} to S3 bucket: ${bucketName}`);
+    console.log(`Possible S3 key patterns: ${standardS3Key} or ${duplicatedS3Key}`);
 
     const mediaParams = {
       mediaId: mediaId,
       originationPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
       destinationS3File: {
-        bucketName: process.env.WHATSAPP_S3_BUCKET_NAME,
-        key: s3Key,
+        bucketName: bucketName,
+        key: s3KeyBase,
       },
     };
 
@@ -162,11 +172,12 @@ export class WhatsAppService {
       const mediaCommand = new GetWhatsAppMessageMediaCommand(mediaParams);
       await client.send(mediaCommand);
 
-      // Return success response
+      // Return success response with the standard S3 key first (we'll check both formats later)
       return {
         result: 'success',
         message: 'media_downloaded',
-        s3Key: mediaId,
+        s3Key: standardS3Key,
+        alternateS3Key: duplicatedS3Key,
         fileSizeKB: metadataResponse.fileSize,
       };
     } catch (error: any) {
