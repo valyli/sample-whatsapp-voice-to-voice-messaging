@@ -35,58 +35,16 @@ export class WhatsappVoiceStack extends Stack {
       : configParams.CreateNewSnsTopic !== undefined 
         ? configParams.CreateNewSnsTopic 
         : true;
-    const mediaBucketName = configParams.S3BucketConfig?.MediaBucketName || 'whatsapp-voice-media';
-    const logsBucketName = configParams.S3BucketConfig?.LogsBucketName || 'whatsapp-voice-logs';
+    const enableAudioResponses = configParams.EnableAudioResponses !== undefined
+      ? configParams.EnableAudioResponses
+      : false;
+    const pollyVoiceId = configParams.PollyVoiceId || 'Joanna';
+    // Generate dynamic bucket names based on stack name and AWS account/region
+    const stackName = id.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const mediaBucketPrefix = 'whatsapp-media';
+    const logsBucketPrefix = 'whatsapp-logs';
 
-    ///////// ------ KMS CMK for SNS & SQS ------ /////////
-
-    // Create a Customer Managed Key (CMK) for SNS and SQS encryption
-    const messagingCMK = new kms.Key(this, 'MessagingCMK', {
-      enableKeyRotation: true,
-      alias: 'whatsapp-messaging-cmk',
-      description: 'CMK for encrypting WhatsApp SNS & SQS',
-      policy: new iam.PolicyDocument({
-        statements: [
-          new iam.PolicyStatement({
-            sid: 'EnableRootAccountFullAccess',
-            effect: iam.Effect.ALLOW,
-            principals: [new iam.AccountRootPrincipal()],
-            actions: ['kms:*'],
-            resources: ['*'],
-          }),
-          new iam.PolicyStatement({
-            sid: 'AllowSNSUseOfKey',
-            effect: iam.Effect.ALLOW,
-            principals: [new iam.ServicePrincipal('sns.amazonaws.com')],
-            actions: ['kms:GenerateDataKey*', 'kms:Decrypt', 'kms:DescribeKey'],
-            resources: ['*'],
-            conditions: {
-              StringEquals: { 'aws:SourceAccount': this.account },
-              ArnLike: { 'aws:SourceArn': `arn:aws:sns:${this.region}:${this.account}:*` },
-            },
-          }),
-          new iam.PolicyStatement({
-            sid: 'AllowSQSUseOfKey',
-            effect: iam.Effect.ALLOW,
-            principals: [new iam.ServicePrincipal('sqs.amazonaws.com')],
-            actions: ['kms:GenerateDataKey*', 'kms:Decrypt', 'kms:DescribeKey'],
-            resources: ['*'],
-            conditions: { StringEquals: { 'aws:SourceAccount': this.account } },
-          }),
-          new iam.PolicyStatement({
-            sid: 'AllowSocialMessagingUseOfKey',
-            effect: iam.Effect.ALLOW,
-            principals: [new iam.ServicePrincipal('social-messaging.amazonaws.com')],
-            actions: ['kms:GenerateDataKey*', 'kms:Decrypt'],
-            resources: ['*'],
-            conditions: {
-              StringEquals: { 'aws:SourceAccount': this.account },
-              ArnLike: { 'aws:SourceArn': `arn:aws:social-messaging:${this.region}:${this.account}:*` },
-            },
-          }),
-        ],
-      }),
-    });
+    // We'll use AWS-managed keys instead of a custom CMK to avoid circular dependencies
 
     ///////// ------ SNS Topic for WhatsApp Messages ------ /////////
 
@@ -94,10 +52,9 @@ export class WhatsappVoiceStack extends Stack {
     let whatsappTopic: sns.ITopic;
     
     if (createNewSnsTopic || !whatsAppSNSTopicArn) {
-      // Create a new SNS topic
+      // Create a new SNS topic with AWS-managed encryption
       whatsappTopic = new sns.Topic(this, 'WhatsappVoiceTopic', {
         displayName: 'WhatsApp Voice Messages Topic',
-        masterKey: messagingCMK,
       });
       
       whatsappTopic.addToResourcePolicy(
@@ -141,8 +98,6 @@ export class WhatsappVoiceStack extends Stack {
     const whatsappQueue = new sqs.Queue(this, 'WhatsappVoiceQueue', {
       queueName: 'WhatsappVoiceQueue',
       visibilityTimeout: Duration.seconds(300),
-      encryption: sqs.QueueEncryption.KMS,
-      encryptionMasterKey: messagingCMK,
       enforceSSL: true,
     });
 
@@ -169,13 +124,17 @@ export class WhatsappVoiceStack extends Stack {
     );
 
     // Subscribe the SQS queue to the SNS topic
-    whatsappTopic.addSubscription(new subs.SqsSubscription(whatsappQueue));
+    // Use raw message delivery to avoid circular dependencies
+    whatsappTopic.addSubscription(new subs.SqsSubscription(whatsappQueue, {
+      rawMessageDelivery: true
+    }));
 
     ///////// ------ S3 Buckets for Audio Storage and Logging ------ /////////
 
     // Create an S3 bucket for access logs
     const accessLogsBucket = new s3.Bucket(this, 'AccessLogsBucket', {
-      bucketName: `${logsBucketName}-${this.account}-${this.region}`,
+      // Generate a unique bucket name based on stack name and AWS account/region
+      bucketName: `${logsBucketPrefix}-${stackName}-${this.account.substring(0, 8)}-${this.region}`,
       objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_PREFERRED,
       removalPolicy: RemovalPolicy.RETAIN,
       encryption: s3.BucketEncryption.S3_MANAGED,
@@ -185,7 +144,8 @@ export class WhatsappVoiceStack extends Stack {
 
     // Create an S3 bucket for WhatsApp media (audio files)
     const whatsappMediaBucket = new s3.Bucket(this, 'WhatsappMediaBucket', {
-      bucketName: `${mediaBucketName}-${this.account}-${this.region}`,
+      // Generate a unique bucket name based on stack name and AWS account/region
+      bucketName: `${mediaBucketPrefix}-${stackName}-${this.account.substring(0, 8)}-${this.region}`,
       removalPolicy: RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -207,35 +167,42 @@ export class WhatsappVoiceStack extends Stack {
     ///////// ------ Lambda Function for Processing WhatsApp Messages ------ /////////
 
     // Create a Lambda function for processing WhatsApp messages
-    const processingLambda = new nodeLambda.NodejsFunction(this, 'WhatsappProcessingLambda', {
+    const processingLambda = new lambda.Function(this, 'WhatsappProcessingLambda', {
       runtime: lambda.Runtime.NODEJS_18_X,
-      entry: path.join(__dirname, '../src/lambda/whatsapp-processor.ts'),
-      handler: 'handler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../src/lambda')),
+      handler: 'dist/whatsapp-processor.handler',
       timeout: Duration.seconds(60),
       memorySize: 1024,
       logRetention: logs.RetentionDays.ONE_WEEK,
       layers: [ffmpegLayer],
-      bundling: {
-        externalModules: ['@aws-sdk/client-transcribe-streaming'],
-        nodeModules: [
-          '@aws-sdk/client-s3',
-          '@aws-sdk/client-sns',
-          '@aws-sdk/client-social-messaging',
-          '@aws-sdk/client-sagemaker-runtime'
-        ],
-      },
       environment: {
         WHATSAPP_MEDIA_BUCKET: whatsappMediaBucket.bucketName,
         WHATSAPP_S3_BUCKET_NAME: whatsappMediaBucket.bucketName,
         WHATSAPP_PHONE_NUMBER_ID: whatsAppPhoneNumberId,
         VOICE_ENGINE: engine.toLowerCase(),
         WHISPER_ENDPOINT_NAME: whisperEndpointName || '',
-        PROCESSED_MESSAGES_TOPIC_ARN: whatsappTopic.topicArn,
+        // Use a string literal for the topic ARN to break circular dependency
+        PROCESSED_MESSAGES_TOPIC_ARN: createNewSnsTopic || !whatsAppSNSTopicArn 
+          ? `arn:aws:sns:${this.region}:${this.account}:WhatsappVoiceTopic` 
+          : whatsAppSNSTopicArn,
+        ENABLE_AUDIO_RESPONSES: enableAudioResponses.toString(),
+        POLLY_VOICE_ID: pollyVoiceId,
       },
     });
 
-    // Add SQS as an event source for the Lambda
-    processingLambda.addEventSource(new eventsources.SqsEventSource(whatsappQueue, { batchSize: 1 }));
+    // Use escape hatch to manually add the event source mapping
+    // instead of using the high-level construct
+    const cfnFunction = processingLambda.node.defaultChild as lambda.CfnFunction;
+    
+    // Create the event source mapping using CloudFormation directly
+    const eventSourceMapping = new lambda.CfnEventSourceMapping(this, 'WhatsappQueueEventSourceMapping', {
+      functionName: processingLambda.functionName,
+      eventSourceArn: whatsappQueue.queueArn,
+      batchSize: 1,
+    });
+    
+    // Add explicit dependency to break the circular reference
+    eventSourceMapping.addDependsOn(cfnFunction);
 
     // Add permissions to the Lambda function
     processingLambda.addToRolePolicy(
@@ -289,6 +256,14 @@ export class WhatsappVoiceStack extends Stack {
         })
       );
     }
+    
+    // Add Polly permissions for text-to-speech
+    processingLambda.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['polly:SynthesizeSpeech'],
+        resources: ['*'],
+      })
+    );
 
     ///////// ------ Outputs ------ /////////
 

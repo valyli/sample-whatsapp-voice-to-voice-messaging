@@ -2,15 +2,13 @@
     "CdkProjectName": "WhatsappVoiceStack",
     "Engine": "whisper",
     "WhisperEndpointName": "endpoint-quick-start-ph3vh",
-    "WhatsAppPhoneNumberId": "YOUR_WHATSAPP_PHONE_NUMBER_ID",
-    "WhatsAppSNSTopicArn": "",
+    "WhatsAppPhoneNumberId": "phone-number-id-fdeb4571cf7e4f04baacc9a7e955581d",
+    "WhatsAppSNSTopicArn": "arn:aws:sns:us-east-1:690921836746:whatsapp-events",
     "CreateNewSnsTopic": true,
-    "S3BucketConfig": {
-        "MediaBucketName": "whatsapp-voice-media",
-        "LogsBucketName": "whatsapp-voice-logs"
-    },
+    "EnableAudioResponses": true,
+    "PollyVoiceId": "Joanna",
     "Tags": {
-        "Project": "AWSSummitAssistant",
+        "Project": "WhatsAppVoiceTranscribe",
         "Environment": "Development"
     }
 }

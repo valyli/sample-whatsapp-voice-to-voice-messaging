@@ -5,7 +5,7 @@ import { spawn } from 'child_process';
 import { Readable } from 'stream';
 import { tmpdir } from 'os';
 import { writeFileSync, unlinkSync, readFileSync } from 'fs';
-import path from 'path';
+import * as path from 'path';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { TranscribeStreamingClient, StartStreamTranscriptionCommand } from '@aws-sdk/client-transcribe-streaming';
 

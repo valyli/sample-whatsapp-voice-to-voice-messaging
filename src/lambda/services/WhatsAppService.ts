@@ -5,6 +5,8 @@ import {
   SocialMessagingClient,
   SendWhatsAppMessageCommand,
   GetWhatsAppMessageMediaCommand,
+  PostWhatsAppMessageMediaCommand,
+  DeleteWhatsAppMessageMediaCommand
 } from '@aws-sdk/client-socialmessaging';
 
 const client = new SocialMessagingClient({ region: process.env.AWS_REGION });
@@ -40,27 +42,53 @@ export class WhatsAppService {
   }
 
   /**
-   * Send a WhatsApp text message
+   * Send a WhatsApp message (generic function for both text and audio)
    */
   static async sendWhatsAppMessage(
     destinationNumber: string,
-    outboundMessage: string,
-    previewUrl = false,
-    sessionId?: string,
+    content: string | { mediaId: string },
+    options: {
+      type: 'text' | 'audio',
+      previewUrl?: boolean,
+      sessionId?: string
+    } = { type: 'text' }
   ) {
+    // Log the phone number for debugging
+    console.log(`Sending ${options.type} message to phone number: ${destinationNumber}`);
+    
+    // Ensure the phone number is in the correct format (with + prefix)
+    let formattedNumber = destinationNumber;
+    
+    // Add + prefix if not present
+    if (!formattedNumber.startsWith('+')) {
+      formattedNumber = `+${formattedNumber}`;
+    }
+    
+    console.log(`Formatted phone number: ${formattedNumber}`);
+    
+    // Create the base message object
     const message: any = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
-      to: destinationNumber,
-      type: 'text',
-      text: {
-        preview_url: previewUrl,
-        body: outboundMessage,
-      },
+      to: formattedNumber,
+      type: options.type,
     };
     
-    if (sessionId) {
-      message.biz_opaque_callback_data = sessionId;
+    // Add content based on message type
+    if (options.type === 'text' && typeof content === 'string') {
+      message.text = {
+        preview_url: options.previewUrl || false,
+        body: content,
+      };
+    } else if (options.type === 'audio' && typeof content === 'object' && 'mediaId' in content) {
+      message.audio = {
+        id: content.mediaId
+      };
+    }
+    
+    // Add session ID if provided
+    if (options.sessionId) {
+      message.biz_opaque_callback_data = options.sessionId;
     }
 
     const params = {
@@ -74,9 +102,25 @@ export class WhatsAppService {
       const response = await client.send(command);
       return response;
     } catch (error: any) {
-      console.error('WhatsAppService.sendWhatsAppMessage: ', error);
+      console.error(`WhatsAppService.sendWhatsApp${options.type === 'text' ? 'Message' : 'Audio'}: `, error);
       throw new Error(error.message);
     }
+  }
+  
+  /**
+   * Send a WhatsApp text message (convenience method)
+   */
+  static async sendWhatsAppTextMessage(
+    destinationNumber: string,
+    outboundMessage: string,
+    previewUrl = false,
+    sessionId?: string,
+  ) {
+    return this.sendWhatsAppMessage(
+      destinationNumber,
+      outboundMessage,
+      { type: 'text', previewUrl, sessionId }
+    );
   }
 
   /**
@@ -130,6 +174,78 @@ export class WhatsAppService {
       return {
         result: 'error',
         message: error.message,
+      };
+    }
+  }
+
+  /**
+   * Upload audio file to WhatsApp from S3
+   */
+  static async uploadWhatsAppAudio(s3Key: string) {
+    try {
+      const params = {
+        originationPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,
+        sourceS3File: {
+          bucketName: process.env.WHATSAPP_S3_BUCKET_NAME,
+          key: s3Key
+        }
+      };
+
+      const command = new PostWhatsAppMessageMediaCommand(params);
+      const response = await client.send(command);
+
+      return {
+        result: 'success',
+        message: 'audio_uploaded',
+        mediaId: response.mediaId
+      };
+    } catch (error: any) {
+      console.error('WhatsAppService.uploadWhatsAppAudio: ', error);
+      return {
+        result: 'error',
+        message: error.message
+      };
+    }
+  }
+
+  /**
+   * Send a WhatsApp audio message (convenience method)
+   */
+  static async sendWhatsAppAudio(
+    destinationNumber: string,
+    mediaId: string,
+    sessionId?: string
+  ) {
+    return this.sendWhatsAppMessage(
+      destinationNumber,
+      { mediaId },
+      { type: 'audio', sessionId }
+    );
+  }
+
+  /**
+   * Delete WhatsApp media
+   */
+  static async deleteWhatsAppMedia(mediaId: string) {
+    try {
+      const params = {
+        mediaId: mediaId,
+        originationPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID
+      };
+
+      const command = new DeleteWhatsAppMessageMediaCommand(params);
+      const response = await client.send(command);
+
+      return {
+        result: 'success',
+        message: 'media_deleted',
+        success: response.success
+      };
+    } catch (error: any) {
+      console.error('WhatsAppService.deleteWhatsAppMedia: ', error);
+      return {
+        result: 'error',
+        message: error.message
       };
     }
   }

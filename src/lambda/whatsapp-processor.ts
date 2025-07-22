@@ -7,23 +7,64 @@ import { S3Service } from './services/S3Service';
 import { WhatsAppService } from './services/WhatsAppService';
 import { WTranscribeService } from './services/WTranscribeService';
 import { TranscribeService } from './services/TranscribeService';
+import { PollyService } from './services/PollyService';
 
 const snsClient = new SNSClient({ region: process.env.AWS_REGION });
 
 const {
-  WHATSAPP_S3_BUCKET_NAME,
+  WHATSAPP_S3_BUCKET_NAME = '',
   VOICE_ENGINE = 'whisper',
   PROCESSED_MESSAGES_TOPIC_ARN,
+  ENABLE_AUDIO_RESPONSES = 'false',
+  POLLY_VOICE_ID = 'Joanna'
 } = process.env;
 
 export const handler: SQSHandler = async (event: SQSEvent) => {
   for (const record of event.Records) {
     try {
-      const body = JSON.parse(record.body);
-      const snsMessage = JSON.parse(body.Message);
+      console.log('Processing SQS record:', record.body);
       
-      // Parse WhatsApp message
-      const webhook = JSON.parse(snsMessage.whatsAppWebhookEntry);
+      // Check if the body is already an object (might be pre-parsed by SQS)
+      let body;
+      try {
+        body = typeof record.body === 'string' ? JSON.parse(record.body) : record.body;
+      } catch (parseError) {
+        console.error('Error parsing record body:', parseError);
+        console.log('Raw record body:', record.body);
+        continue;
+      }
+      
+      // Parse WhatsApp message - handle both direct webhook and SNS message formats
+      let webhook;
+      try {
+        // Check if this is a direct webhook message or an SNS message
+        if (body.whatsAppWebhookEntry && typeof body.whatsAppWebhookEntry === 'string') {
+          // Direct webhook format
+          console.log('Processing direct webhook message');
+          webhook = JSON.parse(body.whatsAppWebhookEntry);
+        } else if (body.Message && typeof body.Message === 'string') {
+          // SNS message format
+          console.log('Processing SNS message');
+          const snsMessage = JSON.parse(body.Message);
+          
+          if (!snsMessage.whatsAppWebhookEntry || typeof snsMessage.whatsAppWebhookEntry !== 'string') {
+            console.error('Invalid SNS message format, missing whatsAppWebhookEntry property or not a string');
+            console.log('SNS Message:', JSON.stringify(snsMessage));
+            continue;
+          }
+          
+          webhook = JSON.parse(snsMessage.whatsAppWebhookEntry);
+        } else {
+          console.error('Unsupported message format, missing both whatsAppWebhookEntry and Message properties');
+          console.log('Body:', JSON.stringify(body));
+          continue;
+        }
+      } catch (parseError) {
+        console.error('Error parsing webhook entry:', parseError);
+        console.log('Body:', JSON.stringify(body));
+        continue;
+      }
+      
       const change = webhook?.changes?.[0]?.value;
       
       if (!change || change.statuses) {
@@ -32,12 +73,6 @@ export const handler: SQSHandler = async (event: SQSEvent) => {
       }
       
       const msg = change.messages[0];
-      
-      // Skip if not an audio message
-      if (msg.type !== 'audio') {
-        console.log(`Message type ${msg.type} is not audio, skipping`);
-        continue;
-      }
       
       // Create base message object
       const message = {
@@ -48,6 +83,60 @@ export const handler: SQSHandler = async (event: SQSEvent) => {
         contactName: change.contacts?.[0]?.profile?.name,
         messageType: msg.type,
       };
+      
+      // Handle different message types
+      if (msg.type === 'text') {
+        console.log(`Processing text message from ${message.originationNumber}`);
+        
+        // Extract text content
+        const textContent = msg.text?.body || '';
+        
+        // Send a response
+        await sendResponse(message, `You said: ${textContent}`);
+        
+        // If audio responses are enabled, generate and send audio response
+        if (ENABLE_AUDIO_RESPONSES.toLowerCase() === 'true') {
+          try {
+            console.log('Generating audio response using Polly');
+            
+            // Generate audio from text using Polly
+            const pollyResult = await PollyService.textToSpeech(
+              textContent,
+              POLLY_VOICE_ID
+            );
+            
+            if (pollyResult.result === 'success') {
+              console.log('Audio generated successfully, uploading to WhatsApp');
+              
+              // Upload audio to WhatsApp
+              const uploadResult = await WhatsAppService.uploadWhatsAppAudio(pollyResult.s3Key);
+              
+              if (uploadResult.result === 'success' && uploadResult.mediaId) {
+                console.log('Audio uploaded successfully, sending to user');
+                
+                // Send audio message
+                await WhatsAppService.sendWhatsAppAudio(
+                  message.originationNumber,
+                  uploadResult.mediaId
+                );
+                
+                // Delete the WhatsApp media after sending
+                await WhatsAppService.deleteWhatsAppMedia(uploadResult.mediaId);
+              }
+            }
+          } catch (audioError) {
+            console.error('Error processing audio response:', audioError);
+          }
+        }
+        
+        continue;
+      }
+      
+      // Skip if not an audio message
+      if (msg.type !== 'audio') {
+        console.log(`Message type ${msg.type} is not supported, skipping`);
+        continue;
+      }
       
       console.log(`Processing audio message from ${message.originationNumber}`);
       
@@ -69,21 +158,56 @@ export const handler: SQSHandler = async (event: SQSEvent) => {
         if (VOICE_ENGINE.toLowerCase() === 'whisper') {
           // Use Whisper
           const startTime = performance.now();
-          const result = await WTranscribeService.transcribeAudioFromS3(mediaInfo.s3Key);
+          const result = await WTranscribeService.transcribeAudioFromS3(mediaInfo.s3Key || '');
           const duration = (performance.now() - startTime) / 1000;
           console.log('Whisper Transcribe duration:', `${duration.toFixed(2)} seconds`);
           transcription = result.transcription;
         } else {
           // Use Amazon Transcribe
           const startTime = performance.now();
-          const result = await TranscribeService.transcribeAudioFromS3(mediaInfo.s3Key);
+          const result = await TranscribeService.transcribeAudioFromS3(mediaInfo.s3Key || '');
           const duration = (performance.now() - startTime) / 1000;
           console.log('Amazon Transcribe duration:', `${duration.toFixed(2)} seconds`);
           transcription = result.transcription;
         }
         
-        // Send transcription back to user
+        // Send transcription back to user as text
         await sendResponse(message, `*You said:* ${transcription}`);
+        
+        // If audio responses are enabled, generate and send audio response
+        if (ENABLE_AUDIO_RESPONSES.toLowerCase() === 'true') {
+          try {
+            console.log('Generating audio response using Polly');
+            
+            // Generate audio from transcription using Polly
+            const pollyResult = await PollyService.textToSpeech(
+              transcription,
+              POLLY_VOICE_ID
+            );
+            
+            if (pollyResult.result === 'success') {
+              console.log('Audio generated successfully, uploading to WhatsApp');
+              
+              // Upload audio to WhatsApp
+              const uploadResult = await WhatsAppService.uploadWhatsAppAudio(pollyResult.s3Key);
+              
+              if (uploadResult.result === 'success' && uploadResult.mediaId) {
+                console.log('Audio uploaded successfully, sending to user');
+                
+                // Send audio message
+                await WhatsAppService.sendWhatsAppAudio(
+                  message.originationNumber,
+                  uploadResult.mediaId
+                );
+                
+                // Delete the WhatsApp media after sending
+                await WhatsAppService.deleteWhatsAppMedia(uploadResult.mediaId);
+              }
+            }
+          } catch (audioError) {
+            console.error('Error processing audio response:', audioError);
+          }
+        }
         
         // Clean up S3 object
         await S3Service.deleteS3Object(WHATSAPP_S3_BUCKET_NAME, `whatsapp-media/sum_${msg.audio.id}.ogg`);
@@ -119,13 +243,13 @@ export const handler: SQSHandler = async (event: SQSEvent) => {
     }
   }
   
-  return { statusCode: 200, message: 'Processing complete' };
+  // Lambda handlers for SQS events don't need to return anything
 };
 
 // Helper function to send WhatsApp response
 async function sendResponse(message: any, text: string): Promise<void> {
-  await WhatsAppService.sendWhatsAppMessage(
-    message.originationNumber.replace('+', ''),
+  await WhatsAppService.sendWhatsAppTextMessage(
+    message.originationNumber,
     text
   );
 }

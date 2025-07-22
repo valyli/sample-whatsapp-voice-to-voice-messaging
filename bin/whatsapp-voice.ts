@@ -11,7 +11,7 @@ const configParams = require('../config.params.json');
 
 const app = new cdk.App();
 
-const tags = configParams['tags']
+const tags = configParams['Tags'] || {}; // Use uppercase 'Tags' and provide a default empty object
 Object.entries(tags).forEach(([key, value]) => {
     if (typeof value === "string") {
         Tags.of(app).add(key, value);

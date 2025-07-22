@@ -4,7 +4,7 @@
 import { spawn } from 'child_process';
 import { tmpdir } from 'os';
 import { writeFileSync, unlinkSync, readFileSync } from 'fs';
-import path from 'path';
+import * as path from 'path';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { SageMakerRuntimeClient, InvokeEndpointCommand } from '@aws-sdk/client-sagemaker-runtime';
 
