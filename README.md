@@ -1,6 +1,6 @@
 # WhatsApp Voice Message Processing System
 
-This project provides an AWS CDK stack for processing WhatsApp voice messages with transcription capabilities. It allows you to receive voice messages via WhatsApp, transcribe them using either Amazon Whisper (via SageMaker) or Amazon Transcribe, and send the transcription back to the user.
+This project provides an AWS CDK stack for processing WhatsApp voice messages with transcription capabilities. It allows you to receive voice messages via WhatsApp, transcribe them using either Amazon Whisper (via SageMaker) or Amazon Transcribe, and send the transcription back to the user. The system can also optionally respond with audio messages using Amazon Polly text-to-speech conversion.
 
 ## Architecture
 
@@ -12,13 +12,16 @@ The system consists of the following components:
 2. **SQS Queue**: Subscribes to the SNS topic and buffers messages for processing
 3. **Lambda Function**: Processes voice messages from the queue
 4. **S3 Buckets**: Store audio files and access logs
-5. **KMS**: Customer Managed Key (CMK) for encrypting SNS and SQS data
+5. **Amazon Polly**: Converts text to speech for audio responses
+6. **AWS KMS**: Provides encryption for SNS, SQS, and S3 data
 
 ## Features
 
-- **Secure Communication**: All data is encrypted using Customer Managed Keys (CMK)
+- **Secure Communication**: All data is encrypted using AWS KMS
 - **Flexible Configuration**: Use existing SNS topics or create new ones
 - **Dual Transcription Options**: Choose between Whisper (SageMaker) or Amazon Transcribe
+- **Audio Responses**: Optional text-to-speech responses using Amazon Polly
+- **Bidirectional Communication**: Process both text and audio messages
 - **Scalable Architecture**: Leverages serverless components for automatic scaling
 - **Comprehensive Logging**: Access logs for S3 operations and CloudWatch logs for Lambda
 
@@ -42,10 +45,8 @@ The system is configured through the `config.params.json` file:
     "WhatsAppPhoneNumberId": "YOUR_WHATSAPP_PHONE_NUMBER_ID",
     "WhatsAppSNSTopicArn": "",
     "CreateNewSnsTopic": true,
-    "S3BucketConfig": {
-        "MediaBucketName": "whatsapp-voice-media",
-        "LogsBucketName": "whatsapp-voice-logs"
-    },
+    "EnableAudioResponses": true,
+    "PollyVoiceId": "Joanna",
     "Tags": {
         "Project": "WhatsAppVoice",
         "Environment": "Development"
@@ -63,6 +64,8 @@ The system is configured through the `config.params.json` file:
 | `WhatsAppPhoneNumberId` | Your WhatsApp Business API phone number ID |
 | `WhatsAppSNSTopicArn` | ARN of an existing SNS topic (leave empty to create a new one) |
 | `CreateNewSnsTopic` | Whether to create a new SNS topic (`true`) or use existing (`false`) |
+| `EnableAudioResponses` | Whether to enable audio responses using Polly (`true` or `false`) |
+| `PollyVoiceId` | The voice ID to use for Polly text-to-speech (e.g., `Joanna`, `Matthew`) |
 | `S3BucketConfig` | Configuration for S3 buckets |
 | `Tags` | AWS resource tags |
 
@@ -85,16 +88,25 @@ The system is configured through the `config.params.json` file:
 
 ## Usage
 
-Once deployed, the system will automatically process WhatsApp voice messages:
+Once deployed, the system will automatically process WhatsApp messages:
 
-1. A user sends a voice message to your WhatsApp Business number
-2. The message is published to the SNS topic
-3. The SQS queue receives the message
-4. The Lambda function processes the voice message:
-   - Downloads the audio file
-   - Transcribes it using the configured engine
-   - Sends the transcription back to the user
-   - Stores the audio in S3
+1. **Text Messages**:
+   - A user sends a text message to your WhatsApp Business number
+   - The message is published to the SNS topic
+   - The SQS queue receives the message
+   - The Lambda function processes the text message and sends a response
+   - If audio responses are enabled, it also converts the text to speech using Polly and sends an audio response
+
+2. **Voice Messages**:
+   - A user sends a voice message to your WhatsApp Business number
+   - The message is published to the SNS topic
+   - The SQS queue receives the message
+   - The Lambda function processes the voice message:
+     - Downloads the audio file
+     - Transcribes it using the configured engine
+     - Sends the transcription back to the user
+     - If audio responses are enabled, it also converts the transcription to speech using Polly and sends an audio response
+     - Stores the audio in S3
 
 ## Lambda Function Structure
 
@@ -105,6 +117,7 @@ The Lambda function consists of several modules:
 - `services/S3Service.ts`: Service for S3 operations
 - `services/WTranscribeService.ts`: Service for Whisper transcription
 - `services/TranscribeService.ts`: Service for Amazon Transcribe
+- `services/PollyService.ts`: Service for Amazon Polly text-to-speech
 
 ### FFmpeg Lambda Layer
 
@@ -118,7 +131,7 @@ The system includes an FFmpeg Lambda layer for audio processing:
 ## Security Considerations
 
 - All data in transit and at rest is encrypted
-- SNS and SQS use Customer Managed Keys (CMK)
+- SNS, SQS, and S3 use AWS KMS for encryption
 - S3 buckets enforce SSL and block public access
 - IAM policies follow the principle of least privilege
 
