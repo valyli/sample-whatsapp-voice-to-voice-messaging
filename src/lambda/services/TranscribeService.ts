@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT-0
 
 import { spawn } from 'child_process';
-import { Readable } from 'stream';
 import { tmpdir } from 'os';
 import { writeFileSync, unlinkSync, readFileSync } from 'fs';
 import * as path from 'path';

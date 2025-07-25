@@ -3,8 +3,9 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: MIT-0
 
-import {App, Tags} from 'aws-cdk-lib'
+import {App, Tags, Aspects} from 'aws-cdk-lib'
 import * as cdk from 'aws-cdk-lib';
+import { AwsSolutionsChecks } from 'cdk-nag';
 import { WhatsappVoiceStack } from '../lib/whatsapp-voice-stack';
 
 const configParams = require('../config.params.json');
@@ -17,6 +18,13 @@ Object.entries(tags).forEach(([key, value]) => {
         Tags.of(app).add(key, value);
     }
 })
+
+// Add CDK Nag AwsSolutionsChecks to the app with enhanced debug logging
+const nagPackProps = {
+  verbose: true,
+  logIgnores: true,
+};
+Aspects.of(app).add(new AwsSolutionsChecks(nagPackProps));
 
 new WhatsappVoiceStack(app, `${configParams.CdkProjectName}`, {
     env: { account: process.env.CDK_DEFAULT_ACCOUNT, region: process.env.CDK_DEFAULT_REGION }

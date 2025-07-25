@@ -3,7 +3,6 @@
     "Engine": "whisper",
     "WhisperEndpointName": "endpoint-quick-start-ph3vh",
     "WhatsAppPhoneNumberId": "phone-number-id-fdeb4571cf7e4f04baacc9a7e955581d",
-    "WhatsAppSNSTopicArn": "arn:aws:sns:us-east-1:690921836746:whatsapp-events",
     "CreateNewSnsTopic": true,
     "EnableAudioResponses": true,
     "PollyVoiceId": "Joanna",
