@@ -1,17 +1,17 @@
 # WhatsApp Voice Message Processing System
 
-This project provides an AWS CDK stack for processing WhatsApp voice messages with transcription capabilities. It allows you to receive voice messages via WhatsApp, transcribe them using either Amazon Whisper (via SageMaker) or Amazon Transcribe, and send the transcription back to the user. The system can also optionally respond with audio messages using Amazon Polly text-to-speech conversion.
+This project provides an AWS CDK stack for processing WhatsApp voice messages with transcription capabilities. It allows you to receive voice messages via WhatsApp, transcribe them using either Amazon Whisper (via Amazon Bedrock Marketplace) or Amazon Transcribe, and send the transcription back to the user. The system can also optionally respond with audio messages using Amazon Polly text-to-speech conversion.
 
 ## Architecture
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for a detailed architecture diagram and description.
+![Architecture Diagram](./Architecture%20diagram.png)
 
 The system consists of the following components:
 
-1. **SNS Topic**: Receives WhatsApp messages from the WhatsApp Business API
+1. **SNS Topic**: Inbound WhatsApp messages and events are published there
 2. **SQS Queue**: Subscribes to the SNS topic and buffers messages for processing
 3. **Lambda Function**: Processes voice messages from the queue
-4. **S3 Buckets**: Store audio files and access logs
+4. **S3 Buckets**: Temporarily stores audio files and access logs
 5. **Amazon Polly**: Converts text to speech for audio responses
 6. **AWS KMS**: Provides encryption for SNS, SQS, and S3 data
 
@@ -19,19 +19,17 @@ The system consists of the following components:
 
 - **Secure Communication**: All data is encrypted using AWS KMS
 - **Flexible Configuration**: Use existing SNS topics or create new ones
-- **Dual Transcription Options**: Choose between Whisper (SageMaker) or Amazon Transcribe
+- **Dual Transcription Options**: Choose between Whisper or Amazon Transcribe
 - **Audio Responses**: Optional text-to-speech responses using Amazon Polly
 - **Bidirectional Communication**: Process both text and audio messages
-- **Scalable Architecture**: Leverages serverless components for automatic scaling
-- **Comprehensive Logging**: Access logs for S3 operations and CloudWatch logs for Lambda
 
 ## Prerequisites
 
 - AWS Account with appropriate permissions
 - Node.js 14.x or later
-- AWS CDK v2 installed (`npm install -g aws-cdk`)
-- WhatsApp Business API account with a registered phone number
-- For Whisper: A deployed SageMaker endpoint running Whisper
+- AWS CDK installed (`npm install -g aws-cdk`)
+- WhatsApp Business account with a registered phone number
+- For Whisper: Deploy it through Amazon Bedrock marketplace model deployment
 
 ## Configuration
 
@@ -60,13 +58,12 @@ The system is configured through the `config.params.json` file:
 |-----------|-------------|
 | `CdkProjectName` | Name of the CDK stack |
 | `Engine` | Transcription engine to use (`whisper` or `transcribe`) |
-| `WhisperEndpointName` | Name of the SageMaker endpoint running Whisper (required if Engine is `whisper`) |
-| `WhatsAppPhoneNumberId` | Your WhatsApp Business API phone number ID |
+| `WhisperEndpointName` | Name of the endpoint running Whisper, can be found in Amazon Bedrock => Tune => Marketplace model deployment => Managed deployments (required if Engine is `whisper`) |
+| `WhatsAppPhoneNumberId` | Your WhatsApp phone number ID |
 | `WhatsAppSNSTopicArn` | ARN of an existing SNS topic (leave empty to create a new one) |
 | `CreateNewSnsTopic` | Whether to create a new SNS topic (`true`) or use existing (`false`) |
 | `EnableAudioResponses` | Whether to enable audio responses using Polly (`true` or `false`) |
 | `PollyVoiceId` | The voice ID to use for Polly text-to-speech (e.g., `Joanna`, `Matthew`) |
-| `S3BucketConfig` | Configuration for S3 buckets |
 | `Tags` | AWS resource tags |
 
 ## Deployment
@@ -148,7 +145,3 @@ To remove all resources created by this stack:
 ```bash
 cdk destroy
 ```
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.

@@ -1,12 +1,15 @@
+# TypeScript output
 *.js
 !jest.config.js
 *.d.ts
-node_modules
-.DS_Store
+
+# Dependencies
+node_modules/
+**/node_modules/
 
 # CDK asset staging directory
 .cdk.staging
-cdk.out
+cdk.out/
 
 # Lambda build artifacts
 dist/
@@ -21,3 +24,6 @@ layers/ffmpeg/ffmpeg.tar.xz
 .vscode/
 *.swp
 *.swo
+
+# OS files
+.DS_Store
