@@ -2,6 +2,14 @@
 
 This project provides an AWS CDK stack for processing WhatsApp voice messages with transcription capabilities. It allows you to receive voice messages via WhatsApp, transcribe them using either Amazon Whisper (via Amazon Bedrock Marketplace) or Amazon Transcribe, and send the transcription back to the user. The system can also optionally respond with audio messages using Amazon Polly text-to-speech conversion.
 
+This solution provides the building blocks and blueprint for processing inbound voice messages and sending out voice messages using WhatsApp and AWS.
+
+## Demo
+
+![WhatsApp Voice Processing Demo](./WhatsApp-Voice-to-Voice-demo.gif)
+
+The demo above shows the complete voice-to-voice workflow: sending a WhatsApp voice message, receiving the transcription as text, and getting the same transcribed text converted back to speech using Amazon Polly as an audio response.
+
 ## Architecture
 
 ![Architecture Diagram](./Architecture%20diagram.png)
