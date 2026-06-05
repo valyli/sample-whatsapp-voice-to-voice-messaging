@@ -1,0 +1,10 @@
+{
+  "name": "transcribe-lambda",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Lambda handler: ffmpeg + Amazon Transcribe Streaming",
+  "main": "index.mjs",
+  "dependencies": {
+    "@aws-sdk/client-transcribe-streaming": "^3.540.0"
+  }
+}
